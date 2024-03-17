@@ -23,6 +23,8 @@ from elodie.media.audio import Audio
 from elodie.media.photo import Photo
 from elodie.media.text import Text
 from elodie.media.video import Video
+from elodie.plugins.plugins import Plugins
+from elodie.plugins.googlephotos.googlephotos import GooglePhotos
 
 os.environ['TZ'] = 'GMT'
 
@@ -40,7 +42,7 @@ def test_import_file_text():
     shutil.rmtree(folder)
     shutil.rmtree(folder_destination)
 
-    assert helper.path_tz_fix(os.path.join('2016-04-Apr','London','2016-04-07_11-15-26-valid-sample-title.txt')) in dest_path, dest_path
+    assert helper.path_tz_fix(os.path.join('2016-04-Apr','Rainham','2016-04-07_11-15-26-valid-sample-title.txt')) in dest_path, dest_path
 
 def test_import_file_audio():
     temporary_folder, folder = helper.create_working_folder()
@@ -88,7 +90,7 @@ def test_import_file_video():
     shutil.rmtree(folder)
     shutil.rmtree(folder_destination)
 
-    assert helper.path_tz_fix(os.path.join('2015-01-Jan','California','2015-01-19_12-45-11-video.mov')) in dest_path, dest_path
+    assert helper.path_tz_fix(os.path.join('2015-01-Jan','Pinecrest','2015-01-19_12-45-11-video.mov')) in dest_path, dest_path
 
 def test_import_file_path_utf8_encoded_ascii_checkmark():
     temporary_folder, folder = helper.create_working_folder()
@@ -107,7 +109,7 @@ def test_import_file_path_utf8_encoded_ascii_checkmark():
     shutil.rmtree(folder)
     shutil.rmtree(folder_destination)
 
-    assert helper.path_tz_fix(os.path.join('2016-04-Apr','London',u'2016-04-07_11-15-26-unicode\u2713filename-sample-title.txt')) in dest_path, dest_path
+    assert helper.path_tz_fix(os.path.join('2016-04-Apr','Rainham',u'2016-04-07_11-15-26-unicode\u2713filename-sample-title.txt')) in dest_path, dest_path
 
 def test_import_file_path_unicode_checkmark():
     temporary_folder, folder = helper.create_working_folder()
@@ -124,7 +126,7 @@ def test_import_file_path_unicode_checkmark():
     shutil.rmtree(folder)
     shutil.rmtree(folder_destination)
 
-    assert helper.path_tz_fix(os.path.join('2016-04-Apr','London',u'2016-04-07_11-15-26-unicode\u2713filename-sample-title.txt')) in dest_path, dest_path
+    assert helper.path_tz_fix(os.path.join('2016-04-Apr','Rainham',u'2016-04-07_11-15-26-unicode\u2713filename-sample-title.txt')) in dest_path, dest_path
 
 def test_import_file_path_utf8_encoded_ascii_latin_nbsp():
     temporary_folder, folder = helper.create_working_folder()
@@ -143,7 +145,7 @@ def test_import_file_path_utf8_encoded_ascii_latin_nbsp():
     shutil.rmtree(folder)
     shutil.rmtree(folder_destination)
 
-    assert helper.path_tz_fix(os.path.join('2016-04-Apr','London',u'2016-04-07_11-15-26-unicode\xa0filename-sample-title.txt')) in dest_path, dest_path
+    assert helper.path_tz_fix(os.path.join('2016-04-Apr','Rainham',u'2016-04-07_11-15-26-unicode\xa0filename-sample-title.txt')) in dest_path, dest_path
 
 def test_import_file_path_unicode_latin_nbsp():
     temporary_folder, folder = helper.create_working_folder()
@@ -160,7 +162,7 @@ def test_import_file_path_unicode_latin_nbsp():
     shutil.rmtree(folder)
     shutil.rmtree(folder_destination)
 
-    assert helper.path_tz_fix(os.path.join('2016-04-Apr','London',u'2016-04-07_11-15-26-unicode\xa0filename-sample-title.txt')) in dest_path, dest_path
+    assert helper.path_tz_fix(os.path.join('2016-04-Apr','Rainham',u'2016-04-07_11-15-26-unicode\xa0filename-sample-title.txt')) in dest_path, dest_path
     
 def test_import_file_allow_duplicate_false():
     temporary_folder, folder = helper.create_working_folder()
@@ -280,13 +282,133 @@ def test_import_invalid_file_exit_code():
 
     helper.reset_dbs()
     runner = CliRunner()
-    result = runner.invoke(elodie._import, ['--destination', folder_destination, origin_invalid, origin_valid])
+    result = runner.invoke(elodie._import, ['--destination', folder_destination, '--allow-duplicates', origin_invalid, origin_valid])
     helper.restore_dbs()
 
     shutil.rmtree(folder)
     shutil.rmtree(folder_destination)
 
     assert result.exit_code == 1, result.exit_code
+
+def test_import_file_with_single_exclude():
+    temporary_folder, folder = helper.create_working_folder()
+    temporary_folder_destination, folder_destination = helper.create_working_folder()
+
+    origin_valid = '%s/valid.jpg' % folder
+    shutil.copyfile(helper.get_file('plain.jpg'), origin_valid)
+
+    runner = CliRunner()
+    result = runner.invoke(elodie._import, ['--destination', folder_destination, '--exclude-regex', origin_valid[0:5], '--allow-duplicates', origin_valid])
+
+    assert 'Success         0' in result.output, result.output
+    assert 'Error           0' in result.output, result.output
+
+def test_import_file_with_multiple_exclude():
+    temporary_folder, folder = helper.create_working_folder()
+    temporary_folder_destination, folder_destination = helper.create_working_folder()
+
+    origin_valid = '%s/valid.jpg' % folder
+    shutil.copyfile(helper.get_file('plain.jpg'), origin_valid)
+
+    runner = CliRunner()
+    result = runner.invoke(elodie._import, ['--destination', folder_destination, '--exclude-regex', 'does not exist in path', '--exclude-regex', origin_valid[0:5], '--allow-duplicates', origin_valid])
+
+    assert 'Success         0' in result.output, result.output
+    assert 'Error           0' in result.output, result.output
+
+def test_import_file_with_non_matching_exclude():
+    temporary_folder, folder = helper.create_working_folder()
+    temporary_folder_destination, folder_destination = helper.create_working_folder()
+
+    origin_valid = '%s/valid.jpg' % folder
+    shutil.copyfile(helper.get_file('plain.jpg'), origin_valid)
+
+    runner = CliRunner()
+    result = runner.invoke(elodie._import, ['--destination', folder_destination, '--exclude-regex', 'does not exist in path', '--allow-duplicates', origin_valid])
+
+    assert 'Success         1' in result.output, result.output
+    assert 'Error           0' in result.output, result.output
+
+def test_import_directory_with_matching_exclude():
+    temporary_folder, folder = helper.create_working_folder()
+    temporary_folder_destination, folder_destination = helper.create_working_folder()
+
+    origin_valid = '%s/valid.jpg' % folder
+    shutil.copyfile(helper.get_file('plain.jpg'), origin_valid)
+
+    runner = CliRunner()
+    result = runner.invoke(elodie._import, ['--destination', folder_destination, '--source', folder, '--exclude-regex', folder[1:5], '--allow-duplicates'])
+
+    assert 'Success         0' in result.output, result.output
+    assert 'Error           0' in result.output, result.output
+
+def test_import_directory_with_non_matching_exclude():
+    temporary_folder, folder = helper.create_working_folder()
+    temporary_folder_destination, folder_destination = helper.create_working_folder()
+
+    origin_valid = '%s/valid.jpg' % folder
+    shutil.copyfile(helper.get_file('plain.jpg'), origin_valid)
+
+    runner = CliRunner()
+    result = runner.invoke(elodie._import, ['--destination', folder_destination, '--source', folder, '--exclude-regex', 'non-matching', '--allow-duplicates'])
+
+    assert 'Success         1' in result.output, result.output
+    assert 'Error           0' in result.output, result.output
+
+@mock.patch('elodie.config.config_file', '%s/config.ini-import-file-with-single-config-exclude' % gettempdir())
+def test_import_file_with_single_config_exclude():
+    config_string = """
+    [Exclusions]
+    name1=valid
+            """
+    with open('%s/config.ini-import-file-with-single-config-exclude' % gettempdir(), 'w') as f:
+        f.write(config_string)
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    temporary_folder, folder = helper.create_working_folder()
+    temporary_folder_destination, folder_destination = helper.create_working_folder()
+
+    origin_valid = '%s/valid.jpg' % folder
+    shutil.copyfile(helper.get_file('plain.jpg'), origin_valid)
+
+    runner = CliRunner()
+    result = runner.invoke(elodie._import, ['--destination', folder_destination, '--allow-duplicates', origin_valid, '--debug'])
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    assert 'Success         0' in result.output, result.output
+    assert 'Error           0' in result.output, result.output
+
+@mock.patch('elodie.config.config_file', '%s/config.ini-import-file-with-multiple-config-exclude' % gettempdir())
+def test_import_file_with_multiple_config_exclude():
+    config_string = """
+    [Exclusions]
+    name1=notvalidatall
+    name2=valid
+            """
+    with open('%s/config.ini-import-file-with-multiple-config-exclude' % gettempdir(), 'w') as f:
+        f.write(config_string)
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    temporary_folder, folder = helper.create_working_folder()
+    temporary_folder_destination, folder_destination = helper.create_working_folder()
+
+    origin_valid = '%s/valid.jpg' % folder
+    shutil.copyfile(helper.get_file('plain.jpg'), origin_valid)
+
+    runner = CliRunner()
+    result = runner.invoke(elodie._import, ['--destination', folder_destination, '--allow-duplicates', origin_valid, '--debug'])
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    assert 'Success         0' in result.output, result.output
+    assert 'Error           0' in result.output, result.output
 
 def test_update_location_on_audio():
     temporary_folder, folder = helper.create_working_folder()
@@ -310,8 +432,8 @@ def test_update_location_on_audio():
 
     assert status == True, status
     assert metadata['latitude'] != metadata_processed['latitude'], metadata_processed['latitude']
-    assert helper.isclose(metadata_processed['latitude'], 37.36883), metadata_processed['latitude']
-    assert helper.isclose(metadata_processed['longitude'], -122.03635), metadata_processed['longitude']
+    assert helper.isclose(metadata_processed['latitude'], 37.37187), metadata_processed['latitude']
+    assert helper.isclose(metadata_processed['longitude'], -122.03749), metadata_processed['longitude']
 
 def test_update_location_on_photo():
     temporary_folder, folder = helper.create_working_folder()
@@ -335,8 +457,8 @@ def test_update_location_on_photo():
 
     assert status == True, status
     assert metadata['latitude'] != metadata_processed['latitude']
-    assert helper.isclose(metadata_processed['latitude'], 37.36883), metadata_processed['latitude']
-    assert helper.isclose(metadata_processed['longitude'], -122.03635), metadata_processed['longitude']
+    assert helper.isclose(metadata_processed['latitude'], 37.37187), metadata_processed['latitude']
+    assert helper.isclose(metadata_processed['longitude'], -122.03749), metadata_processed['longitude']
 
 def test_update_location_on_text():
     temporary_folder, folder = helper.create_working_folder()
@@ -360,8 +482,8 @@ def test_update_location_on_text():
 
     assert status == True, status
     assert metadata['latitude'] != metadata_processed['latitude']
-    assert helper.isclose(metadata_processed['latitude'], 37.36883), metadata_processed['latitude']
-    assert helper.isclose(metadata_processed['longitude'], -122.03635), metadata_processed['longitude']
+    assert helper.isclose(metadata_processed['latitude'], 37.37187), metadata_processed['latitude']
+    assert helper.isclose(metadata_processed['longitude'], -122.03749), metadata_processed['longitude']
 
 def test_update_location_on_video():
     temporary_folder, folder = helper.create_working_folder()
@@ -385,8 +507,8 @@ def test_update_location_on_video():
 
     assert status == True, status
     assert metadata['latitude'] != metadata_processed['latitude']
-    assert helper.isclose(metadata_processed['latitude'], 37.36883), metadata_processed['latitude']
-    assert helper.isclose(metadata_processed['longitude'], -122.03635), metadata_processed['longitude']
+    assert helper.isclose(metadata_processed['latitude'], 37.37187), metadata_processed['latitude']
+    assert helper.isclose(metadata_processed['longitude'], -122.03749), metadata_processed['longitude']
 
 def test_update_time_on_audio():
     temporary_folder, folder = helper.create_working_folder()
@@ -604,6 +726,45 @@ def test_verify_error():
 
     assert origin in result.output, result.output
     assert 'Error           1' in result.output, result.output
+
+@mock.patch('elodie.config.config_file', '%s/config.ini-cli-batch-plugin-googlephotos' % gettempdir())
+def test_cli_batch_plugin_googlephotos():
+    auth_file = helper.get_file('plugins/googlephotos/auth_file.json')
+    secrets_file = helper.get_file('plugins/googlephotos/secrets_file.json')
+    config_string = """
+    [Plugins]
+    plugins=GooglePhotos
+
+    [PluginGooglePhotos]
+    auth_file={}
+    secrets_file={}
+            """
+    config_string_fmt = config_string.format(
+        auth_file,
+        secrets_file
+    )
+    with open('%s/config.ini-cli-batch-plugin-googlephotos' % gettempdir(), 'w') as f:
+        f.write(config_string_fmt)
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    final_file_path_1 = helper.get_file('plain.jpg')
+    final_file_path_2 = helper.get_file('no-exif.jpg')
+    sample_metadata_1 = Photo(final_file_path_1).get_metadata()
+    sample_metadata_2 = Photo(final_file_path_2).get_metadata()
+    gp = GooglePhotos()
+    gp.after('', '', final_file_path_1, sample_metadata_1)
+    gp.after('', '', final_file_path_2, sample_metadata_1)
+
+    runner = CliRunner()
+    result = runner.invoke(elodie._batch)
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    assert "elodie/tests/files/plain.jpg uploaded successfully.\"}\n" in result.output, result.output
+    assert "elodie/tests/files/no-exif.jpg uploaded successfully.\"}\n" in result.output, result.output
 
 def test_cli_debug_import():
     runner = CliRunner()

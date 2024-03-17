@@ -1,6 +1,5 @@
 **/.DS_Store
 **/*.pyc
-**/config.ini
 **/node_modules/**
 dist/**
 docs/_build
@@ -10,3 +9,8 @@ build/**
 **/*.nef
 **/*.rw2
 env/**
+/Lib
+.idea/
+/Scripts
+.elodie/hash.json
+.elodie/location.json

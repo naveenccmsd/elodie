@@ -1,7 +1,9 @@
 # Hello, I'm Elodie
 ~~ *Your Personal EXIF-based Photo, Video and Audio Assistant* ~~
 
-[![Build Status](https://travis-ci.org/jmathai/elodie.svg?branch=master)](https://travis-ci.org/jmathai/elodie) [![Coverage Status](https://coveralls.io/repos/github/jmathai/elodie/badge.svg?branch=master)](https://coveralls.io/github/jmathai/elodie?branch=master) [![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/jmathai/elodie/badges/quality-score.png?b=master)](https://scrutinizer-ci.com/g/jmathai/elodie/?branch=master)
+[![CircleCI](https://dl.circleci.com/status-badge/img/gh/jmathai/elodie/tree/master.svg?style=svg)](https://dl.circleci.com/status-badge/redirect/gh/jmathai/elodie/tree/master) [![Coverage Status](https://coveralls.io/repos/github/jmathai/elodie/badge.svg?branch=master)](https://coveralls.io/github/jmathai/elodie?branch=master) [![Scrutinizer Code Quality](https://scrutinizer-ci.com/g/jmathai/elodie/badges/quality-score.png?b=master)](https://scrutinizer-ci.com/g/jmathai/elodie/?branch=master)
+
+<p align="center"><img src ="https://jmathai.s3.amazonaws.com/github/elodie/elodie-folder-anim.gif" /></p>
 
 ## Quickstart guide
 
@@ -11,7 +13,7 @@ Getting started takes just a few minutes.
 
 Elodie relies on the great [ExifTool library by Phil Harvey](http://www.sno.phy.queensu.ca/~phil/exiftool/). You'll need to install it for your platform.
 
-Some features for video files will only work with newer versions of ExifTool and have been tested on version 10.20 or higher. Check your version by typing `exiftool -ver` and see the [manual installation instructions for ExifTool](http://www.sno.phy.queensu.ca/~phil/exiftool/install.html#Unix) if needed.
+Some features for video files will only work with newer versions of ExifTool and have been tested on version 10.20 or higher. Support for HEIC files requires version 11.50 or higher. Check your version by typing `exiftool -ver` and see the [manual installation instructions for ExifTool](http://www.sno.phy.queensu.ca/~phil/exiftool/install.html#Unix) if needed.
 
 ```
 # OSX (uses homebrew, http://brew.sh/)
@@ -126,6 +128,9 @@ Options:
   --trash                  After copying files, move the old files to the
                            trash.
   --allow-duplicates       Import the file even if it's already been imported.
+  --debug                  Override the value in constants.py with True.
+  --exclude-regex TEXT     Regular expression for directories or files to
+                           exclude.
   --help                   Show this message and exit.
 ```
 
@@ -166,11 +171,25 @@ Options:
 Usage: elodie.py verify
 ```
 
+### Excluding folders and files from being imported
+
+If you have specific folders or files which you would like to prevent from being imported you can provide regular expressions which will be used to match and skip files from being imported.
+
+You can specify an exclusion at run time by using the `--exclude-regex` argument of the `import` command. You can pass multiple `--exclude-regex` arguments and all folder/file paths which match will be (silently) skipped.
+
+If there are certain file or folder paths you *never* want to import then you can also add an `[Exclusions]` section to your `config.ini` file. Similar to the command line argument you can provide multiple exclusions. Here is an example.
+
+```
+[Exclusions]
+synology_folders=@eaDir
+thumbnails=.thumbnails
+```
+
 ### Create your own folder structure
 
 OK, so what if you don't like the folders being named `2015-07-Jul/Mountain View`? No problem!
 
-You can add a custom folder structure by editing your `config.ini` file (which should be placed under `~/.elodie/config.ini`).
+You can add a custom folder structure by editing your `config.ini` file (which should be placed under `~/.elodie/config.ini`). If you'd like to use a different folder for your configuration file then set an environment variable named `ELODIE_APPLICATION_DIRECTORY` with the fully qualified directory path.
 
 #### Custom folder examples
 
@@ -258,15 +277,18 @@ You can configure how Elodie names your files using placeholders. This works sim
 
 If you'd like to specify your own naming convention it's recommended you include something that's mostly unique like the time including seconds. You'll need to include a `[File]` section in your `config.ini` file with a name attribute. If a placeholder doesn't have a value then it plus any preceding characters which are not alphabetic are removed.
 
+By default the resulting filename is all lowercased. To change this behavior to uppercasing add capitalization=upper.
+
 ```
 [File]
 date=%Y-%m-%b-%H-%M-%S
-name=%date-%original_name-%title.jpg
-# -> 2012-05-Mar-12-59-30-dsc_1234-my-title.jpg
+name=%date-%original_name-%title.%extension
+# -> 2012-05-mar-12-59-30-dsc_1234-my-title.jpg
 
 date=%Y-%m-%b-%H-%M-%S
-name=%date-%original_name-%album.jpg
-# -> 2012-05-Mar-12-59-30-dsc_1234-my-album.jpg
+name=%date-%original_name-%album.%extension
+capitalization=upper
+# -> 2012-05-MAR-12-59-30-DSC_1234-MY-ALBUM.JPG
 ```
 
 ### Reorganize by changing location and dates
@@ -350,7 +372,7 @@ When I organize photos I look at the embedded metadata. Here are the details of 
 | Dimension | Fields | Notes |
 |---|---|---|
 | Date Taken (photo) | EXIF:DateTimeOriginal, EXIF:CreateDate, EXIF:ModifyDate, file created, file modified |   |
-| Date Taken (video, audio) | QuickTime:CreationDate, QuickTime:CreationDate-und-US, QuickTime:MediaCreateDate, file created, file modified |   |
+| Date Taken (video, audio) | QuickTime:CreationDate, QuickTime:CreateDate, QuickTime:CreationDate-und-US, QuickTime:MediaCreateDate, H264:DateTimeOriginal, file created, file modified |   |
 | Location (photo) | EXIF:GPSLatitude/EXIF:GPSLatitudeRef, EXIF:GPSLongitude/EXIF:GPSLongitudeRef  |   |
 | Location (video, audio) | XMP:GPSLatitude, Composite:GPSLatitude, XMP:GPSLongitude, Composite:GPSLongitude | Composite tags are read-only |
 | Title (photo) | XMP:Title |   |
@@ -361,7 +383,7 @@ When I organize photos I look at the embedded metadata. Here are the details of 
 
 ## Using OpenStreetMap data from MapQuest
 
-I use MapQuest to help me organize your photos by location. You'll need to sign up for a [free developer account](https://developer.mapquest.com/plan_purchase/steps/business_edition/business_edition_free) and get an API key. They give you 15,000 calls per month so I can't do any more than that unless you shell out some big bucks to them. Once I hit my limit the best I'll be able to do is *Unknown Location* until the following month.
+I use MapQuest to help me organize your photos by location. You'll need to sign up for a [free developer account](https://developer.mapquest.com/plans) and get an API key. They give you 15,000 calls per month so I can't do any more than that unless you shell out some big bucks to them. Once I hit my limit the best I'll be able to do is *Unknown Location* until the following month.
 
 Once you sign up you'll have to get an API key and copy it into a file named `~/.elodie/config.ini`. I've included a `config.ini-sample` file which you can copy to `config.ini`.
 

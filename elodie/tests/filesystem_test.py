@@ -20,9 +20,21 @@ from elodie.media.media import Media
 from elodie.media.photo import Photo
 from elodie.media.video import Video
 from nose.plugins.skip import SkipTest
+from elodie.external.pyexiftool import ExifTool
+from elodie.dependencies import get_exiftool
+from elodie import constants
 
 os.environ['TZ'] = 'GMT'
 
+def setup_module():
+    exiftool_addedargs = [
+            u'-config',
+            u'"{}"'.format(constants.exiftool_config)
+        ]
+    ExifTool(executable_=get_exiftool(), addedargs=exiftool_addedargs).start()
+
+def teardown_module():
+    ExifTool().terminate
 
 def test_create_directory_success():
     filesystem = FileSystem()
@@ -207,35 +219,35 @@ name=%date-%original_name.%extension
 def test_get_file_name_plain():
     filesystem = FileSystem()
     media = Photo(helper.get_file('plain.jpg'))
-    file_name = filesystem.get_file_name(media)
+    file_name = filesystem.get_file_name(media.get_metadata())
 
     assert file_name == helper.path_tz_fix('2015-12-05_00-59-26-plain.jpg'), file_name
 
 def test_get_file_name_with_title():
     filesystem = FileSystem()
     media = Photo(helper.get_file('with-title.jpg'))
-    file_name = filesystem.get_file_name(media)
+    file_name = filesystem.get_file_name(media.get_metadata())
 
     assert file_name == helper.path_tz_fix('2015-12-05_00-59-26-with-title-some-title.jpg'), file_name
 
 def test_get_file_name_with_original_name_exif():
     filesystem = FileSystem()
     media = Photo(helper.get_file('with-filename-in-exif.jpg'))
-    file_name = filesystem.get_file_name(media)
+    file_name = filesystem.get_file_name(media.get_metadata())
 
     assert file_name == helper.path_tz_fix('2015-12-05_00-59-26-foobar.jpg'), file_name
 
 def test_get_file_name_with_original_name_title_exif():
     filesystem = FileSystem()
     media = Photo(helper.get_file('with-filename-and-title-in-exif.jpg'))
-    file_name = filesystem.get_file_name(media)
+    file_name = filesystem.get_file_name(media.get_metadata())
 
     assert file_name == helper.path_tz_fix('2015-12-05_00-59-26-foobar-foobar-title.jpg'), file_name
 
 def test_get_file_name_with_uppercase_and_spaces():
     filesystem = FileSystem()
     media = Photo(helper.get_file('Plain With Spaces And Uppercase 123.jpg'))
-    file_name = filesystem.get_file_name(media)
+    file_name = filesystem.get_file_name(media.get_metadata())
 
     assert file_name == helper.path_tz_fix('2015-12-05_00-59-26-plain-with-spaces-and-uppercase-123.jpg'), file_name
 
@@ -252,7 +264,7 @@ name=%date-%original_name.%extension
 
     filesystem = FileSystem()
     media = Photo(helper.get_file('plain.jpg'))
-    file_name = filesystem.get_file_name(media)
+    file_name = filesystem.get_file_name(media.get_metadata())
 
     if hasattr(load_config, 'config'):
         del load_config.config
@@ -272,7 +284,7 @@ name=%date-%original_name-%title.%extension
 
     filesystem = FileSystem()
     media = Photo(helper.get_file('with-title.jpg'))
-    file_name = filesystem.get_file_name(media)
+    file_name = filesystem.get_file_name(media.get_metadata())
 
     if hasattr(load_config, 'config'):
         del load_config.config
@@ -292,12 +304,75 @@ name=%date-%original_name-%title.%extension
 
     filesystem = FileSystem()
     media = Photo(helper.get_file('plain.jpg'))
-    file_name = filesystem.get_file_name(media)
+    file_name = filesystem.get_file_name(media.get_metadata())
 
     if hasattr(load_config, 'config'):
         del load_config.config
 
     assert file_name == helper.path_tz_fix('2015-12-05-plain.jpg'), file_name
+
+@mock.patch('elodie.config.config_file', '%s/config.ini-filename-custom-with-lowercase' % gettempdir())
+def test_get_file_name_custom_with_lower_capitalization():
+    with open('%s/config.ini-filename-custom-with-lowercase' % gettempdir(), 'w') as f:
+        f.write("""
+[File]
+date=%Y-%m-%d
+name=%date-%original_name-%title.%extension
+capitalization=lower
+        """)
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    filesystem = FileSystem()
+    media = Photo(helper.get_file('plain.jpg'))
+    file_name = filesystem.get_file_name(media.get_metadata())
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    assert file_name == helper.path_tz_fix('2015-12-05-plain.jpg'), file_name
+
+@mock.patch('elodie.config.config_file', '%s/config.ini-filename-custom-with-invalidcase' % gettempdir())
+def test_get_file_name_custom_with_invalid_capitalization():
+    with open('%s/config.ini-filename-custom-with-invalidcase' % gettempdir(), 'w') as f:
+        f.write("""
+[File]
+date=%Y-%m-%d
+name=%date-%original_name-%title.%extension
+capitalization=garabage
+        """)
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    filesystem = FileSystem()
+    media = Photo(helper.get_file('plain.jpg'))
+    file_name = filesystem.get_file_name(media.get_metadata())
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    assert file_name == helper.path_tz_fix('2015-12-05-plain.jpg'), file_name
+
+@mock.patch('elodie.config.config_file', '%s/config.ini-filename-custom-with-uppercase' % gettempdir())
+def test_get_file_name_custom_with_upper_capitalization():
+    with open('%s/config.ini-filename-custom-with-uppercase' % gettempdir(), 'w') as f:
+        f.write("""
+[File]
+date=%Y-%m-%d
+name=%date-%original_name-%title.%extension
+capitalization=upper
+        """)
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    filesystem = FileSystem()
+    media = Photo(helper.get_file('plain.jpg'))
+    file_name = filesystem.get_file_name(media.get_metadata())
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    assert file_name == helper.path_tz_fix('2015-12-05-PLAIN.JPG'), file_name
 
 def test_get_folder_path_plain():
     filesystem = FileSystem()
@@ -468,7 +543,7 @@ full_path=%date/%location
     if hasattr(load_config, 'config'):
         del load_config.config
 
-    assert path == os.path.join('2015-12-05','United States of America-California-Sunnyvale'), path
+    assert path == os.path.join('2015-12-05','US-CA-Sunnyvale'), path
 
 @mock.patch('elodie.config.config_file', '%s/config.ini-fallback' % gettempdir())
 def test_get_folder_path_with_fallback_folder():
@@ -512,8 +587,8 @@ full_path=%year/%month/%location
     path = filesystem.get_folder_path(media.get_metadata())
     if hasattr(load_config, 'config'):
         del load_config.config
-
-    assert path == os.path.join('2015','12','Sunnyvale, California'), path
+        
+    assert path == os.path.join('2015','12','Sunnyvale, CA'), path
 
 @mock.patch('elodie.config.config_file', '%s/config.ini-location-date' % gettempdir())
 def test_get_folder_path_with_with_only_one_level():
@@ -546,7 +621,7 @@ def test_parse_folder_name_default():
     if hasattr(load_config, 'config'):
         del load_config.config
     filesystem = FileSystem()
-    place_name = {'default': u'California', 'country': u'United States of America', 'state': u'California', 'city': u'Sunnyvale'}
+    place_name = {'default': u'CA', 'country': u'US', 'state': u'CA', 'city': u'Sunnyvale'}
     mask = '%city'
     location_parts = re.findall('(%[^%]+)', mask)
     path = filesystem.parse_mask_for_location(mask, location_parts, place_name)
@@ -559,20 +634,20 @@ def test_parse_folder_name_multiple():
     if hasattr(load_config, 'config'):
         del load_config.config
     filesystem = FileSystem()
-    place_name = {'default': u'California', 'country': u'United States of America', 'state': u'California', 'city': u'Sunnyvale'}
+    place_name = {'default': u'CA', 'country': u'US', 'state': u'CA', 'city': u'Sunnyvale'}
     mask = '%city-%state-%country'
     location_parts = re.findall('(%[^%]+)', mask)
     path = filesystem.parse_mask_for_location(mask, location_parts, place_name)
     if hasattr(load_config, 'config'):
         del load_config.config
 
-    assert path == 'Sunnyvale-California-United States of America', path
+    assert path == 'Sunnyvale-CA-US', path
 
 def test_parse_folder_name_static_chars():
     if hasattr(load_config, 'config'):
         del load_config.config
     filesystem = FileSystem()
-    place_name = {'default': u'California', 'country': u'United States of America', 'state': u'California', 'city': u'Sunnyvale'}
+    place_name = {'default': u'CA', 'country': u'US', 'state': u'CA', 'city': u'Sunnyvale'}
     mask = '%city-is-the-city'
     location_parts = re.findall('(%[^%]+)', mask)
     path = filesystem.parse_mask_for_location(mask, location_parts, place_name)
@@ -585,40 +660,40 @@ def test_parse_folder_name_key_not_found():
     if hasattr(load_config, 'config'):
         del load_config.config
     filesystem = FileSystem()
-    place_name = {'default': u'California', 'country': u'United States of America', 'state': u'California'}
+    place_name = {'default': u'CA', 'country': u'US', 'state': u'CA'}
     mask = '%city'
     location_parts = re.findall('(%[^%]+)', mask)
     path = filesystem.parse_mask_for_location(mask, location_parts, place_name)
     if hasattr(load_config, 'config'):
         del load_config.config
 
-    assert path == 'California', path
+    assert path == 'CA', path
 
 def test_parse_folder_name_key_not_found_with_static_chars():
     if hasattr(load_config, 'config'):
         del load_config.config
     filesystem = FileSystem()
-    place_name = {'default': u'California', 'country': u'United States of America', 'state': u'California'}
+    place_name = {'default': u'CA', 'country': u'US', 'state': u'CA'}
     mask = '%city-is-not-found'
     location_parts = re.findall('(%[^%]+)', mask)
     path = filesystem.parse_mask_for_location(mask, location_parts, place_name)
     if hasattr(load_config, 'config'):
         del load_config.config
 
-    assert path == 'California', path
+    assert path == 'CA', path
 
 def test_parse_folder_name_multiple_keys_not_found():
     if hasattr(load_config, 'config'):
         del load_config.config
     filesystem = FileSystem()
-    place_name = {'default': u'United States of America', 'country': u'United States of America'}
+    place_name = {'default': u'US', 'country': u'US'}
     mask = '%city-%state'
     location_parts = re.findall('(%[^%]+)', mask)
     path = filesystem.parse_mask_for_location(mask, location_parts, place_name)
     if hasattr(load_config, 'config'):
         del load_config.config
 
-    assert path == 'United States of America', path
+    assert path == 'US', path
 
 def test_process_file_invalid():
     filesystem = FileSystem()
@@ -639,6 +714,7 @@ def test_process_file_plain():
     origin = os.path.join(folder,'photo.jpg')
     shutil.copyfile(helper.get_file('plain.jpg'), origin)
 
+    origin_checksum_preprocess = helper.checksum(origin)
     media = Photo(origin)
     destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
 
@@ -648,8 +724,10 @@ def test_process_file_plain():
     shutil.rmtree(folder)
     shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
 
-    assert origin_checksum is not None, origin_checksum
-    assert origin_checksum == destination_checksum, destination_checksum
+    assert origin_checksum_preprocess is not None
+    assert origin_checksum is not None
+    assert destination_checksum is not None
+    assert origin_checksum_preprocess == origin_checksum
     assert helper.path_tz_fix(os.path.join('2015-12-Dec','Unknown Location','2015-12-05_00-59-26-photo.jpg')) in destination, destination
 
 def test_process_file_with_title():
@@ -659,6 +737,7 @@ def test_process_file_with_title():
     origin = '%s/photo.jpg' % folder
     shutil.copyfile(helper.get_file('with-title.jpg'), origin)
 
+    origin_checksum_preprocess = helper.checksum(origin)
     media = Photo(origin)
     destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
 
@@ -668,8 +747,10 @@ def test_process_file_with_title():
     shutil.rmtree(folder)
     shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
 
-    assert origin_checksum is not None, origin_checksum
-    assert origin_checksum == destination_checksum, destination_checksum
+    assert origin_checksum_preprocess is not None
+    assert origin_checksum is not None
+    assert destination_checksum is not None
+    assert origin_checksum_preprocess == origin_checksum
     assert helper.path_tz_fix(os.path.join('2015-12-Dec','Unknown Location','2015-12-05_00-59-26-photo-some-title.jpg')) in destination, destination
 
 def test_process_file_with_location():
@@ -679,6 +760,7 @@ def test_process_file_with_location():
     origin = os.path.join(folder,'photo.jpg')
     shutil.copyfile(helper.get_file('with-location.jpg'), origin)
 
+    origin_checksum_preprocess = helper.checksum(origin)
     media = Photo(origin)
     destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
 
@@ -688,9 +770,57 @@ def test_process_file_with_location():
     shutil.rmtree(folder)
     shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
 
-    assert origin_checksum is not None, origin_checksum
-    assert origin_checksum == destination_checksum, destination_checksum
+    assert origin_checksum_preprocess is not None
+    assert origin_checksum is not None
+    assert destination_checksum is not None
+    assert origin_checksum_preprocess == origin_checksum
     assert helper.path_tz_fix(os.path.join('2015-12-Dec','Sunnyvale','2015-12-05_00-59-26-photo.jpg')) in destination, destination
+
+def test_process_file_validate_original_checksum():
+    filesystem = FileSystem()
+    temporary_folder, folder = helper.create_working_folder()
+
+    origin = os.path.join(folder,'photo.jpg')
+    shutil.copyfile(helper.get_file('plain.jpg'), origin)
+
+    origin_checksum_preprocess = helper.checksum(origin)
+    media = Photo(origin)
+    destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
+
+    origin_checksum = helper.checksum(origin)
+    destination_checksum = helper.checksum(destination)
+
+    shutil.rmtree(folder)
+    shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
+
+    assert origin_checksum_preprocess is not None, origin_checksum_preprocess
+    assert origin_checksum is not None, origin_checksum
+    assert destination_checksum is not None, destination_checksum
+    assert origin_checksum_preprocess == origin_checksum, (origin_checksum_preprocess, origin_checksum)
+
+
+# See https://github.com/jmathai/elodie/issues/330
+def test_process_file_no_exif_date_is_correct_gh_330():
+    filesystem = FileSystem()
+    temporary_folder, folder = helper.create_working_folder()
+
+    origin = os.path.join(folder,'photo.jpg')
+    shutil.copyfile(helper.get_file('no-exif.jpg'), origin)
+
+    atime = 1330712100
+    utime = 1330712900
+    os.utime(origin, (atime, utime))
+
+    media = Photo(origin)
+    metadata = media.get_metadata()
+
+    destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
+
+    shutil.rmtree(folder)
+    shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
+
+    assert '/2012-03-Mar/' in destination, destination
+    assert '/2012-03-02_18-28-20' in destination, destination
 
 def test_process_file_with_location_and_title():
     filesystem = FileSystem()
@@ -699,6 +829,7 @@ def test_process_file_with_location_and_title():
     origin = os.path.join(folder,'photo.jpg')
     shutil.copyfile(helper.get_file('with-location-and-title.jpg'), origin)
 
+    origin_checksum_preprocess = helper.checksum(origin)
     media = Photo(origin)
     destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
 
@@ -708,8 +839,10 @@ def test_process_file_with_location_and_title():
     shutil.rmtree(folder)
     shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
 
-    assert origin_checksum is not None, origin_checksum
-    assert origin_checksum == destination_checksum, destination_checksum
+    assert origin_checksum_preprocess is not None
+    assert origin_checksum is not None
+    assert destination_checksum is not None
+    assert origin_checksum_preprocess == origin_checksum
     assert helper.path_tz_fix(os.path.join('2015-12-Dec','Sunnyvale','2015-12-05_00-59-26-photo-some-title.jpg')) in destination, destination
 
 def test_process_file_with_album():
@@ -719,6 +852,7 @@ def test_process_file_with_album():
     origin = os.path.join(folder,'photo.jpg')
     shutil.copyfile(helper.get_file('with-album.jpg'), origin)
 
+    origin_checksum_preprocess = helper.checksum(origin)
     media = Photo(origin)
     destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
 
@@ -728,8 +862,10 @@ def test_process_file_with_album():
     shutil.rmtree(folder)
     shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
 
-    assert origin_checksum is not None, origin_checksum
-    assert origin_checksum == destination_checksum, destination_checksum
+    assert origin_checksum_preprocess is not None
+    assert origin_checksum is not None
+    assert destination_checksum is not None
+    assert origin_checksum_preprocess == origin_checksum
     assert helper.path_tz_fix(os.path.join('2015-12-Dec','Test Album','2015-12-05_00-59-26-photo.jpg')) in destination, destination
 
 def test_process_file_with_album_and_title():
@@ -739,6 +875,7 @@ def test_process_file_with_album_and_title():
     origin = os.path.join(folder,'photo.jpg')
     shutil.copyfile(helper.get_file('with-album-and-title.jpg'), origin)
 
+    origin_checksum_preprocess = helper.checksum(origin)
     media = Photo(origin)
     destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
 
@@ -748,8 +885,10 @@ def test_process_file_with_album_and_title():
     shutil.rmtree(folder)
     shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
 
-    assert origin_checksum is not None, origin_checksum
-    assert origin_checksum == destination_checksum, destination_checksum
+    assert origin_checksum_preprocess is not None
+    assert origin_checksum is not None
+    assert destination_checksum is not None
+    assert origin_checksum_preprocess == origin_checksum
     assert helper.path_tz_fix(os.path.join('2015-12-Dec','Test Album','2015-12-05_00-59-26-photo-some-title.jpg')) in destination, destination
 
 def test_process_file_with_album_and_title_and_location():
@@ -759,6 +898,7 @@ def test_process_file_with_album_and_title_and_location():
     origin = os.path.join(folder,'photo.jpg')
     shutil.copyfile(helper.get_file('with-album-and-title-and-location.jpg'), origin)
 
+    origin_checksum_preprocess = helper.checksum(origin)
     media = Photo(origin)
     destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
 
@@ -768,8 +908,10 @@ def test_process_file_with_album_and_title_and_location():
     shutil.rmtree(folder)
     shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
 
-    assert origin_checksum is not None, origin_checksum
-    assert origin_checksum == destination_checksum, destination_checksum
+    assert origin_checksum_preprocess is not None
+    assert origin_checksum is not None
+    assert destination_checksum is not None
+    assert origin_checksum_preprocess == origin_checksum
     assert helper.path_tz_fix(os.path.join('2015-12-Dec','Test Album','2015-12-05_00-59-26-photo-some-title.jpg')) in destination, destination
 
 # gh-89 (setting album then title reverts album)
@@ -782,6 +924,7 @@ def test_process_video_with_album_then_title():
 
     origin_checksum = helper.checksum(origin)
 
+    origin_checksum_preprocess = helper.checksum(origin)
     media = Video(origin)
     media.set_album('test_album')
     media.set_title('test_title')
@@ -792,8 +935,10 @@ def test_process_video_with_album_then_title():
     shutil.rmtree(folder)
     shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
 
-    assert origin_checksum is not None, origin_checksum
-    assert origin_checksum != destination_checksum, destination_checksum
+    assert origin_checksum_preprocess is not None
+    assert origin_checksum is not None
+    assert destination_checksum is not None
+    assert origin_checksum_preprocess == origin_checksum
     assert helper.path_tz_fix(os.path.join('2015-01-Jan','test_album','2015-01-19_12-45-11-movie-test_title.mov')) in destination, destination
 
 @mock.patch('elodie.config.config_file', '%s/config.ini-fallback-folder' % gettempdir())
@@ -836,6 +981,7 @@ full_path=%year/%month/%day
 
     if hasattr(load_config, 'config'):
         del load_config.config
+
     filesystem = FileSystem()
     temporary_folder, folder = helper.create_working_folder()
 
@@ -851,9 +997,11 @@ full_path=%year/%month/%day
 
     if hasattr(load_config, 'config'):
         del load_config.config
+
     media_second = Photo(destination)
     media_second.set_title('foo')
     destination_second = filesystem.process_file(destination, temporary_folder, media_second, allowDuplicate=True)
+
     if hasattr(load_config, 'config'):
         del load_config.config
 
@@ -882,6 +1030,55 @@ def test_process_existing_file_without_changes():
 
     shutil.rmtree(folder)
     shutil.rmtree(os.path.dirname(os.path.dirname(destination)))
+
+@mock.patch('elodie.config.config_file', '%s/config.ini-plugin-throw-error' % gettempdir())
+def test_process_file_with_plugin_throw_error():
+    with open('%s/config.ini-plugin-throw-error' % gettempdir(), 'w') as f:
+        f.write("""
+[Plugins]
+plugins=ThrowError
+        """)
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    filesystem = FileSystem()
+    temporary_folder, folder = helper.create_working_folder()
+
+    origin = os.path.join(folder,'plain.jpg')
+    shutil.copyfile(helper.get_file('plain.jpg'), origin)
+
+    media = Photo(origin)
+    destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    assert destination is None, destination
+
+@mock.patch('elodie.config.config_file', '%s/config.ini-plugin-runtime-error' % gettempdir())
+def test_process_file_with_plugin_runtime_error():
+    with open('%s/config.ini-plugin-runtime-error' % gettempdir(), 'w') as f:
+        f.write("""
+[Plugins]
+plugins=RuntimeError
+        """)
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    filesystem = FileSystem()
+    temporary_folder, folder = helper.create_working_folder()
+
+    origin = os.path.join(folder,'plain.jpg')
+    shutil.copyfile(helper.get_file('plain.jpg'), origin)
+
+    media = Photo(origin)
+    destination = filesystem.process_file(origin, temporary_folder, media, allowDuplicate=True)
+
+    if hasattr(load_config, 'config'):
+        del load_config.config
+
+    assert '2015-12-Dec/Unknown Location/2015-12-05_00-59-26-plain.jpg' in destination, destination
 
 def test_set_utime_with_exif_date():
     filesystem = FileSystem()
@@ -940,6 +1137,36 @@ def test_set_utime_without_exif_date():
     assert initial_time == final_stat.st_mtime
     assert final_stat.st_mtime == time.mktime(metadata_final['date_taken']), (final_stat.st_mtime, time.mktime(metadata_final['date_taken']))
     assert initial_checksum == final_checksum
+
+def test_should_exclude_with_no_exclude_arg():
+    filesystem = FileSystem()
+    result = filesystem.should_exclude('/some/path')
+    assert result == False, result
+
+def test_should_exclude_with_non_matching_regex():
+    filesystem = FileSystem()
+    result = filesystem.should_exclude('/some/path', {re.compile('foobar')})
+    assert result == False, result
+
+def test_should_exclude_with_matching_regex():
+    filesystem = FileSystem()
+    result = filesystem.should_exclude('/some/path', {re.compile('some')})
+    assert result == True, result
+
+def test_should_not_exclude_with_multiple_with_non_matching_regex():
+    filesystem = FileSystem()
+    result = filesystem.should_exclude('/some/path', {re.compile('foobar'), re.compile('dne')})
+    assert result == False, result
+
+def test_should_exclude_with_multiple_with_one_matching_regex():
+    filesystem = FileSystem()
+    result = filesystem.should_exclude('/some/path', {re.compile('foobar'), re.compile('some')})
+    assert result == True, result
+
+def test_should_exclude_with_complex_matching_regex():
+    filesystem = FileSystem()
+    result = filesystem.should_exclude('/var/folders/j9/h192v5v95gd_fhpv63qzyd1400d9ct/T/T497XPQH2R/UATR2GZZTX/2016-04-Apr/London/2016-04-07_11-15-26-valid-sample-title.txt', {re.compile('London.*\.txt$')})
+    assert result == True, result
 
 @mock.patch('elodie.config.config_file', '%s/config.ini-does-not-exist' % gettempdir())
 def test_get_folder_path_definition_default():

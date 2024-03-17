@@ -119,7 +119,7 @@ class Base(object):
         if(mimetype is None):
             return None
 
-        return mimetype[0]
+        return mimetype[0].split("/")[0]
 
     def get_original_name(self):
         """Get the original name of the file from before it was imported.

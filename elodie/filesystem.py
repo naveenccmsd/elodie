@@ -17,7 +17,7 @@ from elodie import log
 from elodie.config import load_config
 from elodie.localstorage import Db
 from elodie.media.base import Base, get_all_subclasses
-
+from elodie.plugins.plugins import Plugins
 
 class FileSystem(object):
     """A class for interacting with the file system."""
@@ -43,6 +43,9 @@ class FileSystem(object):
         # See build failures in Python3 here.
         #  https://travis-ci.org/jmathai/elodie/builds/483012902
         self.whitespace_regex = '[ \t\n\r\f\v]+'
+
+        # Instantiate a plugins object
+        self.plugins = Plugins()
 
     def create_directory(self, directory_path):
         """Create a directory if it does not already exist.
@@ -80,7 +83,7 @@ class FileSystem(object):
 
         return False
 
-    def get_all_files(self, path, extensions=None):
+    def get_all_files(self, path, extensions=None, exclude_regex_list=set()):
         """Recursively get all files which match a path and extension.
 
         :param str path string: Path to start recursive file listing
@@ -94,11 +97,19 @@ class FileSystem(object):
             for cls in subclasses:
                 extensions.update(cls.extensions)
 
+        # Create a list of compiled regular expressions to match against the file path
+        compiled_regex_list = [re.compile(regex) for regex in exclude_regex_list]
         for dirname, dirnames, filenames in os.walk(path):
             for filename in filenames:
-                # If file extension is in `extensions` then append to the list
-                if os.path.splitext(filename)[1][1:].lower() in extensions:
-                    yield os.path.join(dirname, filename)
+                # If file extension is in `extensions` 
+                # And if file path is not in exclude regexes
+                # Then append to the list
+                filename_path = os.path.join(dirname, filename)
+                if (
+                        os.path.splitext(filename)[1][1:].lower() in extensions and
+                        not self.should_exclude(filename_path, compiled_regex_list, False)
+                    ):
+                    yield filename_path
 
     def get_current_directory(self):
         """Get the current working directory.
@@ -107,7 +118,7 @@ class FileSystem(object):
         """
         return os.getcwd()
 
-    def get_file_name(self, media):
+    def get_file_name(self, metadata):
         """Generate file name for a photo or video using its metadata.
 
         Originally we hardcoded the file name to include an ISO date format.
@@ -123,10 +134,6 @@ class FileSystem(object):
             :class:`~elodie.media.video.Video`
         :returns: str or None for non-photo or non-videos
         """
-        if(not media.is_valid()):
-            return None
-
-        metadata = media.get_metadata()
         if(metadata is None):
             return None
 
@@ -211,7 +218,12 @@ class FileSystem(object):
                     name,
                 )
 
-        return name.lower()
+        config = load_config()
+
+        if('File' in config and 'capitalization' in config['File'] and config['File']['capitalization'] == 'upper'):
+            return name.upper()
+        else:
+            return name.lower()
 
     def get_file_name_definition(self):
         """Returns a list of folder definitions.
@@ -403,7 +415,7 @@ class FileSystem(object):
                 place_name,
             )
             return parsed_folder_name
-        elif part in ('album', 'camera_make', 'camera_model'):
+        elif part in ('album', 'camera_make', 'camera_model','extension' , 'mime_type'):
             if metadata[part]:
                 return metadata[part]
         elif part.startswith('"') and part.endswith('"'):
@@ -472,33 +484,12 @@ class FileSystem(object):
 
         return folder_name
 
-    def process_file(self, _file, destination, media, **kwargs):
-        move = False
-        if('move' in kwargs):
-            move = kwargs['move']
-
-        allow_duplicate = False
-        if('allowDuplicate' in kwargs):
-            allow_duplicate = kwargs['allowDuplicate']
-
-        if(not media.is_valid()):
-            print('%s is not a valid media file. Skipping...' % _file)
-            return
-
-        media.set_original_name()
-        metadata = media.get_metadata()
-
-        directory_name = self.get_folder_path(metadata)
-
-        dest_directory = os.path.join(destination, directory_name)
-        file_name = self.get_file_name(media)
-        dest_path = os.path.join(dest_directory, file_name)
-
+    def process_checksum(self, _file, allow_duplicate):
         db = Db()
         checksum = db.checksum(_file)
         if(checksum is None):
-            log.info('Could not get checksum for %s. Skipping...' % _file)
-            return
+            log.info('Could not get checksum for %s.' % _file)
+            return None
 
         # If duplicates are not allowed then we check if we've seen this file
         #  before via checksum. We also check that the file exists at the
@@ -508,16 +499,53 @@ class FileSystem(object):
         checksum_file = db.get_hash(checksum)
         if(allow_duplicate is False and checksum_file is not None):
             if(os.path.isfile(checksum_file)):
-                log.info('%s already exists at %s. Skipping...' % (
+                log.info('%s already at %s.' % (
                     _file,
                     checksum_file
                 ))
-                return
+                return None
             else:
-                log.info('%s matched checksum but file not found at %s. Importing again...' % (  # noqa
+                log.info('%s matched checksum but file not found at %s.' % (  # noqa
                     _file,
                     checksum_file
                 ))
+        return checksum
+
+    def process_file(self, _file, destination, media, **kwargs):
+        move = False
+        if('move' in kwargs):
+            move = kwargs['move']
+
+        allow_duplicate = False
+        if('allowDuplicate' in kwargs):
+            allow_duplicate = kwargs['allowDuplicate']
+
+        stat_info_original = os.stat(_file)
+        metadata = media.get_metadata()
+
+        if(not media.is_valid()):
+            print('%s is not a valid media file. Skipping...' % _file)
+            return
+
+        checksum = self.process_checksum(_file, allow_duplicate)
+        if(checksum is None):
+            log.info('Original checksum returned None for %s. Skipping...' %
+                     _file)
+            return
+
+        # Run `before()` for every loaded plugin and if any of them raise an exception
+        #  then we skip importing the file and log a message.
+        plugins_run_before_status = self.plugins.run_all_before(_file, destination)
+        if(plugins_run_before_status == False):
+            log.warn('At least one plugin pre-run failed for %s' % _file)
+            return
+
+        directory_name = self.get_folder_path(metadata)
+        dest_directory = os.path.join(destination, directory_name)
+        file_name = self.get_file_name(metadata)
+        dest_path = os.path.join(dest_directory, file_name)        
+
+        media.set_original_name()
 
         # If source and destination are identical then
         #  we should not write the file. gh-210
@@ -527,16 +555,53 @@ class FileSystem(object):
 
         self.create_directory(dest_directory)
 
+        # exiftool renames the original file by appending '_original' to the
+        # file name. A new file is written with new tags with the initial file
+        # name. See exiftool man page for more details.
+        exif_original_file = _file + '_original'
+
+        # Check if the source file was processed by exiftool and an _original
+        # file was created.
+        exif_original_file_exists = False
+        if(os.path.exists(exif_original_file)):
+            exif_original_file_exists = True
+
         if(move is True):
             stat = os.stat(_file)
+            # Move the processed file into the destination directory
             shutil.move(_file, dest_path)
+
+            if(exif_original_file_exists is True):
+                # We can remove it as we don't need the initial file.
+                os.remove(exif_original_file)
             os.utime(dest_path, (stat.st_atime, stat.st_mtime))
         else:
-            compatability._copyfile(_file, dest_path)
-            self.set_utime_from_metadata(media.get_metadata(), dest_path)
+            if(exif_original_file_exists is True):
+                # Move the newly processed file with any updated tags to the
+                # destination directory
+                shutil.move(_file, dest_path)
+                # Move the exif _original back to the initial source file
+                shutil.move(exif_original_file, _file)
+            else:
+                compatability._copyfile(_file, dest_path)
 
+            # Set the utime based on what the original file contained 
+            #  before we made any changes.
+            # Then set the utime on the destination file based on metadata.
+            os.utime(_file, (stat_info_original.st_atime, stat_info_original.st_mtime))
+            self.set_utime_from_metadata(metadata, dest_path)
+
+        db = Db()
         db.add_hash(checksum, dest_path)
         db.update_hash_db()
+
+        # Run `after()` for every loaded plugin and if any of them raise an exception
+        #  then we skip importing the file and log a message.
+        plugins_run_after_status = self.plugins.run_all_after(_file, destination, dest_path, metadata)
+        if(plugins_run_after_status == False):
+            log.warn('At least one plugin pre-run failed for %s' % _file)
+            return
+
 
         return dest_path
 
@@ -566,3 +631,15 @@ class FileSystem(object):
             # assume local time zone.
             date_taken_in_seconds = time.mktime(date_taken)
             os.utime(file_path, (time.time(), (date_taken_in_seconds)))
+
+    def should_exclude(self, path, regex_list=set(), needs_compiled=False):
+        if(len(regex_list) == 0):
+            return False
+
+        if(needs_compiled):
+            compiled_list = []
+            for regex in regex_list:
+                compiled_list.append(re.compile(regex))
+            regex_list = compiled_list
+
+        return any(regex.search(path) for regex in regex_list)
