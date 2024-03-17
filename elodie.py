@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 from __future__ import print_function
+from ordered_set import OrderedSet
 import os
 import re
 import sys
@@ -36,7 +37,7 @@ from elodie import constants
 
 FILESYSTEM = FileSystem()
 
-def import_file(_file, destination, album_from_folder, trash, allow_duplicates):
+def import_file(_file, destination, album_from_folder, trash, allow_duplicates, move_source=False):
     
     _file = _decode(_file)
     destination = _decode(destination)
@@ -65,7 +66,7 @@ def import_file(_file, destination, album_from_folder, trash, allow_duplicates):
         media.set_album_from_folder()
 
     dest_path = FILESYSTEM.process_file(_file, destination,
-        media, allowDuplicate=allow_duplicates, move=False)
+        media, allowDuplicate=allow_duplicates, move=move_source)
     if dest_path:
         log.all('%s -> %s' % (_file, dest_path))
     if trash:
@@ -97,12 +98,14 @@ def _batch(debug):
               help='After copying files, move the old files to the trash.')
 @click.option('--allow-duplicates', default=False, is_flag=True,
               help='Import the file even if it\'s already been imported.')
+@click.option('--move-source', default=False, is_flag=True,
+              help='Move source files.')
 @click.option('--debug', default=False, is_flag=True,
               help='Override the value in constants.py with True.')
 @click.option('--exclude-regex', default=set(), multiple=True,
               help='Regular expression for directories or files to exclude.')
 @click.argument('paths', nargs=-1, type=click.Path())
-def _import(destination, source, file, album_from_folder, trash, allow_duplicates, debug, exclude_regex, paths):
+def _import(destination, source, file, album_from_folder, trash, allow_duplicates, move_source, debug, exclude_regex, paths):
     """Import files or directories by reading their EXIF and organizing them accordingly.
     """
     constants.debug = debug
@@ -112,7 +115,7 @@ def _import(destination, source, file, album_from_folder, trash, allow_duplicate
     destination = _decode(destination)
     destination = os.path.abspath(os.path.expanduser(destination))
 
-    files = set()
+    files = OrderedSet()
     paths = set(paths)
     if source:
         source = _decode(source)
@@ -138,7 +141,7 @@ def _import(destination, source, file, album_from_folder, trash, allow_duplicate
 
     for current_file in files:
         dest_path = import_file(current_file, destination, album_from_folder,
-                    trash, allow_duplicates)
+                    trash, allow_duplicates, move_source)
         result.append((current_file, dest_path))
         has_errors = has_errors is True or not dest_path
 
